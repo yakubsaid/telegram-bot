@@ -532,7 +532,7 @@ async def subscription_callback(callback: CallbackQuery):
             show_alert=True
         )
 
-# Start command
+# Start command funksiyasini o'zgartiramiz
 @dp.message(Command("start"))
 async def start_command(message: types.Message, state: FSMContext):
     # Clear any existing state
@@ -540,8 +540,8 @@ async def start_command(message: types.Message, state: FSMContext):
     
     if is_admin(message.from_user.id):
         await message.answer(
-            "🎮 Test Botga Xush kelibsiz!\n\n"
-            "Siz adminsiz. Qanday ish qilmoqchisiz:",
+            "🎮 Test Botga xush kelibsiz!\n\n"
+            "Qanday ish qilmoqchisiz:",
             reply_markup=get_owner_keyboard()
         )
     else:
@@ -568,75 +568,236 @@ async def start_command(message: types.Message, state: FSMContext):
             "Test yaratuvchisidan test kodini oling!"
         )
 
-# Quiz command for users
-@dp.message(Command("quiz"))
-async def quiz_command(message: types.Message, state: FSMContext):
-    if is_admin(message.from_user.id):
-        await message.answer("❌ Adminlar test ololmaydi. Testlarni boshqarish uchun menyudan foydalaning.")
-        return
+# Admin unexpected messages handler ni o'zgartiramiz
+@dp.message(lambda m: is_admin(m.from_user.id))
+async def handle_admin_messages(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
     
-    # Check channel subscription
-    if not await check_subscription(message.from_user.id):
-        subscribe_button = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="👉 Kanalga a'zo bo'lish", url=REQUIRED_CHANNEL)],
-            [InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_subscription")]
-        ])
+    # If admin is not in any specific state, show menu
+    if current_state is None:
         await message.answer(
-            f"❗️ Botdan foydalanish uchun kanalimizga a'zo bo'ling:\n"
-            f"👉 {CHANNEL_USERNAME}\n\n"
-            f"A'zo bo'lgandan so'ng \"✅ Tekshirish\" tugmasini bosing.",
-            reply_markup=subscribe_button
+            "🎮 Test Botga xush kelibsiz!\n\n"
+            "Qanday ish qilmoqchisiz:",
+            reply_markup=get_owner_keyboard()
         )
-        return
+    else:
+        # If admin is in a state but sent unexpected message, provide guidance
+        if current_state == QuizCreation.waiting_for_quiz_name.state:
+            await message.answer("❌ Iltimos, test nomini kiriting yoki /start bosing va qaytadan boshlang.")
+        elif current_state == QuizCreation.waiting_for_question_count.state:
+            await message.answer("❌ Iltimos, faqat raqam kiriting yoki /start bosing va qaytadan boshlang.")
+        elif current_state == QuizCreation.waiting_for_question.state:
+            await message.answer("❌ Iltimos, savol matnini kiriting yoki /start bosing va qaytadan boshlang.")
+        elif current_state == QuizCreation.waiting_for_variants.state:
+            await message.answer("❌ Iltimos, javob variantini kiriting yoki /start bosing va qaytadan boshlang.")
+        elif current_state == QuizCreation.waiting_for_correct_answer.state:
+            await message.answer("❌ Iltimos, to'g'ri javobni kiriting (A, B, C) yoki /start bosing va qaytadan boshlang.")
+
+# Handle ADMIN callbacks (must be placed BEFORE general message handlers)
+@dp.callback_query(lambda c: is_admin(c.from_user.id)) # type: ignore
+async def handle_admin_callbacks(callback: CallbackQuery, state: FSMContext):
+    if callback.data == "create_quiz":
+        await callback.message.edit_text( # type: ignore
+            "📝 Yangi test yaratilyapti...\n\n"
+            "Iltimos, test nomini kiriting:",
+            reply_markup=None
+        )
+        await state.set_state(QuizCreation.waiting_for_quiz_name)
     
-    # Cancel any existing timer
-    await QuizTimer.cancel_timer(message.from_user.id)
-    
-    args = message.text.split()
-    if len(args) != 2:
-        await message.answer("❌ Iltimos, test kodini taqdim eting.\nMisol: /quiz ABC123")
-        return
-    
-    quiz_code = args[1].upper()
-    quiz = QuizManager.get_quiz(quiz_code)
-    
-    if not quiz:
-        await message.answer("❌ Test topilmadi. Iltimos, kodni tekshiring.")
-        return
-    
-    # Check if user has already taken this quiz
-    if QuizManager.has_user_taken_quiz(quiz_code, message.from_user.id):
-        # Get user's previous result
-        user_result = None
-        for result in quiz_results[quiz_code]:
-            if result['user_id'] == message.from_user.id:
-                user_result = result
-                break
-        
-        if user_result:
-            percentage = round((user_result['score']/user_result['total']) * 100, 1)
-            await message.answer(
-                f"❌ Siz bu testni allaqachon topshirgansiz!\n\n"
-                f"🎯 Test: {quiz['name']}\n"
-                f"👤 Ism: {user_result['user_name']}\n"
-                f"📊 Sizning natijangiz: {user_result['score']}/{user_result['total']} ({percentage}%)\n"
-                f"📅 Sana: {user_result['date']}\n\n"
-                f"Har bir testni faqat bir marta topshirish mumkin!"
+    elif callback.data == "view_results":
+        quiz_keyboard = get_quiz_selection_keyboard()
+        if quiz_keyboard:
+            await callback.message.edit_text(
+                "📊 Natijalarni ko'rish uchun testni tanlang:",
+                reply_markup=quiz_keyboard
             )
         else:
-            await message.answer("❌ Siz bu testni allaqachon topshirgansiz!")
-        return
+            await callback.message.edit_text(
+                "📊 Hech qanday test topilmadi.\n\n"
+                "Avval test yarating!",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_menu")]
+                ])
+            )
     
-    await state.update_data(quiz_code=quiz_code, quiz=quiz)
-    await message.answer(
-        f"🎯 Testga xush kelibsiz: {quiz['name']}\n\n"
-        f"📝 Savollar: {len(quiz['questions'])}\n"
-        f"⏰ Har bir savol uchun {QUESTION_TIMEOUT} soniya vaqt\n\n"
-        "Iltimos, to'liq ismingizni kiriting:"
-    )
-    await state.set_state(QuizTaking.waiting_for_name)
+    elif callback.data == "bi_weekly_ranking":
+        await callback.message.edit_text(
+            "🏆 Ikki haftalik reyting\n\n"
+            "Qaysi davr reytingini ko'rmoqchisiz?",
+            reply_markup=get_ranking_keyboard()
+        )
+    
+    elif callback.data == "current_ranking":
+        current_ranking = BiWeeklyManager.get_current_bi_weekly_ranking()
+        current_bi_week = BiWeeklyManager.get_current_bi_week()
+        
+        if current_ranking:
+            start_date, end_date = BiWeeklyManager.get_bi_week_dates(current_bi_week)
+            ranking_text = f"🏆 Joriy ikki hafta reytingi\n"
+            ranking_text += f"📅 {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}\n\n"
+            
+            for i, user in enumerate(current_ranking[:10], 1):  # Top 10
+                medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+                ranking_text += f"{medal} {user['name']}\n"
+                if user['username']:
+                    ranking_text += f"   @{user['username']}\n"
+                ranking_text += f"   📊 {user['average_percentage']}% ({user['total_score']}/{user['total_questions']})\n"
+                ranking_text += f"   🎯 {user['quiz_count']} ta test\n\n"
+        else:
+            ranking_text = f"🏆 Joriy ikki hafta reytingi\n\n"
+            ranking_text += "Hali hech kim test topshirmagan."
+        
+        await callback.message.edit_text(
+            ranking_text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Orqaga", callback_data="bi_weekly_ranking")]
+            ])
+        )
+    
+    elif callback.data == "previous_ranking":
+        previous_ranking = BiWeeklyManager.get_previous_bi_weekly_ranking()
+        
+        if previous_ranking:
+            current_bi_week = BiWeeklyManager.get_current_bi_week()
+            year, bw_part = current_bi_week.split('-BW')
+            year = int(year)
+            bi_week_num = int(bw_part)
+            
+            if bi_week_num > 1:
+                prev_bi_week = f"{year}-BW{bi_week_num-1:02d}"
+            else:
+                prev_bi_week = f"{year-1}-BW26"
+            
+            start_date, end_date = BiWeeklyManager.get_bi_week_dates(prev_bi_week)
+            ranking_text = f"🏆 Oldingi ikki hafta reytingi\n"
+            ranking_text += f"📅 {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}\n\n"
+            
+            for i, user in enumerate(previous_ranking[:10], 1):  # Top 10
+                medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+                ranking_text += f"{medal} {user['name']}\n"
+                if user['username']:
+                    ranking_text += f"   @{user['username']}\n"
+                ranking_text += f"   📊 {user['average_percentage']}%\n"
+                ranking_text += f"   🎯 {user['quiz_count']} ta test\n\n"
+        else:
+            ranking_text = f"🏆 Oldingi ikki hafta reytingi\n\n"
+            ranking_text += "Oldingi davr uchun ma'lumot yo'q."
+        
+        await callback.message.edit_text(
+            ranking_text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Orqaga", callback_data="bi_weekly_ranking")]
+            ])
+        )
+    
+    elif callback.data == "compare_rankings":
+        comparison = BiWeeklyManager.compare_rankings()
+        
+        if comparison:
+            compare_text = f"📈 Ikki haftalik reyting taqqoslash\n\n"
+            
+            for item in comparison[:10]:  # Top 10
+                user = item['user']
+                current_pos = item['current_position']
+                change = item['change']
+                
+                medal = "🥇" if current_pos == 1 else "🥈" if current_pos == 2 else "🥉" if current_pos == 3 else f"{current_pos}."
+                compare_text += f"{medal} {user['name']} {change}\n"
+                if user['username']:
+                    compare_text += f"   @{user['username']}\n"
+                compare_text += f"   📊 {user['average_percentage']}% ({user['total_score']}/{user['total_questions']})\n\n"
+        else:
+            compare_text = "📈 Ikki haftalik reyting taqqoslash\n\n"
+            compare_text += "Taqqoslash uchun yetarli ma'lumot yo'q."
+        
+        await callback.message.edit_text(
+            compare_text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_menu")]
+            ])
+        )
+    
+    elif callback.data == "view_users":
+        if users:
+            user_list = "👥 Ro'yxatdan o'tgan foydalanuvchilar:\n\n"
+            for user_id, user_info in users.items():
+                user_list += f"👤 {user_info['name']}\n"
+                if user_info.get('username'):
+                    user_list += f"📱 @{user_info['username']}\n"
+                else:
+                    user_list += f"📱 Username yo'q\n"
+                user_list += f"🆔 ID: {user_id}\n"
+                user_list += f"📅 Oxirgi ko'rish: {user_info['last_seen']}\n\n"
+        else:
+            user_list = "👥 Hech qanday foydalanuvchi test o'tkazmagan."
+        
+        await callback.message.edit_text(
+            user_list,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_menu")]
+            ])
+        )
+    
+    elif callback.data == "my_quizzes":
+        if quizzes:
+            quiz_list = "🗂️ Testlaringiz:\n\n"
+            for code, quiz in quizzes.items():
+                quiz_list += f"🎯 {quiz['name']}\n"
+                quiz_list += f"🔑 Kod: {code}\n"
+                quiz_list += f"❓ Savollar: {len(quiz['questions'])}\n\n"
+        else:
+            quiz_list = "🗂️ Hech qanday test yaratilmagan."
+        
+        await callback.message.edit_text(
+            quiz_list,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_menu")]
+            ])
+        )
+    
+    elif callback.data == "back_to_menu":
+        await callback.message.edit_text(
+            "🎮 Test Botga xush kelibsiz!\n\n"
+            "Siz adminsiz. Qanday ish qilmoqchisiz:",
+            reply_markup=get_owner_keyboard()
+        )
+    
+    elif callback.data.startswith("quiz_results_"):
+        quiz_code = callback.data.replace("quiz_results_", "")
+        results = quiz_results.get(quiz_code, [])
+        quiz = quizzes.get(quiz_code)
+        
+        if results:
+            results_text = f"📊 Natijalar: {quiz['name']}\n\n"
+            for i, result in enumerate(results, 1):
+                # Calculate timeout statistics
+                timeout_count = sum(1 for answer in result['answers'] if answer.get('timeout', False))
+                answered_count = result['total'] - timeout_count
+                
+                results_text += f"{i}. {result['user_name']}\n"
+                if result.get('username'):
+                    results_text += f"   @{result['username']}\n"
+                else:
+                    results_text += f"   Username yo'q\n"
+                results_text += f"   ID: {result['user_id']}\n"
+                results_text += f"   Ball: {result['score']}/{result['total']}\n"
+                results_text += f"   ✅ Javob berildi: {answered_count}\n"
+                results_text += f"   ⏰ Vaqt tugadi: {timeout_count}\n"
+                results_text += f"   Sana: {result['date']}\n\n"
+        else:
+            results_text = f"📊 Natijalar: {quiz['name']}\n\n"
+            results_text += "Hali hech kim test topshirmagan."
+        
+        await callback.message.edit_text(
+            results_text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Orqaga", callback_data="view_results")]
+            ])
+        )
+    
+    await callback.answer()
 
-# Handler for quiz name input
+# Handle ADMIN quiz creation messages (separated from regular users)
 @dp.message(lambda m: is_admin(m.from_user.id), QuizCreation.waiting_for_quiz_name)
 async def process_quiz_name(message: types.Message, state: FSMContext):
     quiz_name = message.text.strip()
@@ -1225,7 +1386,7 @@ async def handle_admin_messages(message: types.Message, state: FSMContext):
     # If admin is not in any specific state, show menu
     if current_state is None:
         await message.answer(
-            "🎮 Admin Panel\n\n"
+            "🎮 Test Botga xush kelibsiz!\n\n"
             "Qanday ish qilmoqchisiz:",
             reply_markup=get_owner_keyboard()
         )
