@@ -4,7 +4,7 @@ from telegram.ext import (
     ContextTypes, filters
 )
 
-TOKEN = "7215834710:AAHDas5fUxSU96BAKpQTn2d5P1tuT1hMw1Q"
+TOKEN = "8054152301:AAHKFi1WHf5w8ffuF25MB-PiPPo6sYuX2gY"
 ADMIN_ID = 7377694590  # Sizning ID (admin)
 
 # Har bir user uchun vaqtinchalik savol va ID saqlanadi
