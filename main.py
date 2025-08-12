@@ -17,11 +17,11 @@ import calendar
 logging.basicConfig(level=logging.INFO)
 
 # Bot configuration
-BOT_TOKEN = "8307914914:AAEagGzBaPTW7saMM-U4hWcPkUb0hT8SXH8"  # Replace with your bot token
+BOT_TOKEN = "8054152301:AAEfPGb7sLSYfAzTTbmUsVQW72qiIb8cWGw"  # Replace with your bot token
 
 # Channel and admin configuration
 REQUIRED_CHANNEL = "@saidjamolyakubov"  # Majburiy kanal username
-ADMIN_ID = 5479445322  # Yagona admin ID
+ADMIN_ID = 7377694590  # Yagona admin ID
 
 # Helper function to check if user is admin
 def is_admin(user_id):
