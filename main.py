@@ -26,9 +26,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Bot configuration
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = "8054152301:AAE9ReWfi7AKCLShVyopiHH6CWEzG9iqWhQ"  # O'z bot tokeningizni qo'ying
 if not BOT_TOKEN:
-    logger.error("No token provided. Set BOT_TOKEN environment variable!")
+    logger.error("No token provided!")
     sys.exit(1)
 
 # Initialize bot and dispatcher with error handling
